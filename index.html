@@ -1,0 +1,539 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grasp — Don't outsource your understanding</title>
+<meta name="description" content="Grasp is a Claude Code plugin that puts a change on a local board you can actually read. Nothing is posted, pushed or merged until you click for it.">
+<meta property="og:title" content="Grasp — Don't outsource your understanding">
+<meta property="og:description" content="A code review tool for the agent era. A local board for understanding a change, yours or someone else's, before anything leaves the machine.">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23000'/%3E%3Crect x='11' y='7' width='10' height='18' rx='1' fill='%23FF5C00'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+/* ============================================================
+   GRASP — TOKENS (from the design system)
+   ============================================================ */
+:root{
+  --black:#000000; --ink-950:#060606; --ink-900:#0B0B0C; --ink-850:#111113; --ink-800:#161618;
+  --terminal:#1C1C1E; --terminal-2:#232326;
+
+  --gray-700:#2A2A2D; --gray-600:#3A3A3E; --gray-500:#5B5B60; --gray-450:#6E6E73;
+  --gray-400:#828289; --gray-300:#9B9BA1; --gray-200:#C2C2C7; --gray-100:#E4E4E7; --white:#FAFAFA;
+
+  --orange:#FF5C00; --orange-bright:#FF7A2E; --orange-deep:#E24E00; --orange-glow:rgba(255,92,0,.55);
+
+  --syn-key:#B98BD9; --syn-str:#8FBF7F; --syn-fn:#7CA8E0; --syn-num:#E6A06A; --syn-id:#C2C2C7; --syn-com:#5B5B60; --syn-pu:#6E6E73;
+
+  --rule:rgba(255,255,255,.09); --rule-strong:rgba(255,255,255,.16); --rule-faint:rgba(255,255,255,.05);
+  --header-bg:rgba(0,0,0,.72);
+
+  --sans:"Geist",-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"Geist Mono",ui-monospace,"SF Mono","JetBrains Mono",Menlo,monospace;
+
+  --maxw:1240px; --gut:clamp(20px,4vw,48px);
+  --r-sm:6px; --r-md:12px; --r-lg:18px;
+}
+:root[data-theme="light"]{
+  --black:#F6F6F7; --ink-950:#FFFFFF; --ink-900:#FFFFFF; --ink-850:#FFFFFF; --ink-800:#ECECEE;
+  --gray-700:#DADADE; --gray-600:#C4C4C9; --gray-500:#8C8C92; --gray-450:#79797F;
+  --gray-400:#6C6C72; --gray-300:#54545A; --gray-200:#3C3C42; --gray-100:#2A2A2F; --white:#16161A;
+  --rule:rgba(0,0,0,.10); --rule-strong:rgba(0,0,0,.18); --rule-faint:rgba(0,0,0,.05);
+  --header-bg:rgba(246,246,247,.78);
+}
+/* terminal & code surfaces stay dark in both themes */
+.term-win, .cmd{
+  --black:#000; --ink-950:#060606; --ink-900:#0B0B0C; --ink-850:#111113; --ink-800:#161618;
+  --terminal:#1C1C1E; --terminal-2:#232326;
+  --gray-700:#2A2A2D; --gray-600:#3A3A3E; --gray-500:#5B5B60; --gray-450:#6E6E73;
+  --gray-400:#828289; --gray-300:#9B9BA1; --gray-200:#C2C2C7; --gray-100:#E4E4E7; --white:#FAFAFA;
+  --rule:rgba(255,255,255,.09); --rule-strong:rgba(255,255,255,.16); --rule-faint:rgba(255,255,255,.05);
+  color:var(--white);
+}
+
+*{ box-sizing:border-box; margin:0; padding:0; }
+html{ -webkit-text-size-adjust:100%; scroll-behavior:smooth; }
+body{
+  background:var(--black); color:var(--white);
+  font-family:var(--sans); font-weight:400; line-height:1.5; letter-spacing:-0.011em;
+  -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility; overflow-x:hidden;
+  transition:background .25s ease, color .25s ease;
+}
+::selection{ background:var(--orange); color:#000; }
+a{ color:inherit; text-decoration:none; }
+a:focus-visible, button:focus-visible{ outline:2px solid var(--orange); outline-offset:3px; border-radius:4px; }
+
+/* the cursor */
+.cursor{
+  display:inline-block; width:.58em; height:1.05em; background:var(--orange); border-radius:1px;
+  transform:translateY(.14em); box-shadow:0 0 14px var(--orange-glow);
+  animation:blink 1.05s steps(1,end) infinite;
+}
+@keyframes blink{ 0%,49%{opacity:1} 50%,100%{opacity:0} }
+@media (prefers-reduced-motion: reduce){
+  .cursor, .term-cur, .brand .mark i{ animation:none; opacity:1; }
+  body{ transition:none; }
+  html{ scroll-behavior:auto; }
+}
+
+/* scaffold */
+.wrap{ max-width:var(--maxw); margin:0 auto; padding:0 var(--gut); position:relative; }
+.section{ position:relative; z-index:1; border-top:1px solid var(--rule); scroll-margin-top:72px; }
+.section:first-of-type{ border-top:0; }
+.section-pad{ padding:clamp(56px,9vw,120px) 0; }
+.eyebrow{
+  font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--gray-450); display:flex; align-items:center; gap:14px; margin-bottom:26px;
+}
+.eyebrow .idx{ color:var(--orange); }
+.eyebrow .line{ flex:1; height:1px; background:var(--rule); }
+.h2{ font-weight:600; font-size:clamp(26px,3.4vw,40px); letter-spacing:-0.03em; line-height:1.02; }
+.lead{ color:var(--gray-300); font-size:clamp(15px,1.4vw,18px); max-width:54ch; }
+.lead b{ color:var(--white); font-weight:500; }
+.kicker{ font-family:var(--mono); font-size:12.5px; line-height:1.7; letter-spacing:.04em; text-transform:uppercase; color:var(--gray-400); }
+.row-between{ display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; }
+.mt-sm{ margin-top:18px; } .mt-md{ margin-top:34px; } .mt-lg{ margin-top:54px; }
+
+/* nav */
+header{ position:sticky; top:0; z-index:50; background:var(--header-bg); backdrop-filter:blur(14px) saturate(140%); -webkit-backdrop-filter:blur(14px) saturate(140%); border-bottom:1px solid var(--rule); }
+.nav{ display:flex; align-items:center; gap:30px; height:62px; }
+.brand{ display:inline-flex; align-items:center; gap:.5em; font-weight:600; letter-spacing:-0.03em; font-size:17px; }
+.brand .mark{ display:inline-flex; align-items:center; justify-content:center; }
+.brand .mark i{ width:.38em; height:.72em; background:var(--orange); border-radius:1px; box-shadow:0 0 12px var(--orange-glow); animation:blink 1.05s steps(1,end) infinite; }
+.nav nav{ display:flex; gap:22px; margin-left:8px; }
+.nav nav a{ font-family:var(--mono); font-size:12.5px; letter-spacing:.02em; color:var(--gray-400); transition:color .15s; }
+.nav nav a:hover{ color:var(--white); }
+.nav .spacer{ flex:1; }
+.nav .ghost{ font-family:var(--mono); font-size:12.5px; color:var(--gray-300); }
+.nav .ghost:hover{ color:var(--white); }
+.theme-toggle{
+  width:34px; height:34px; flex:none; border-radius:8px; cursor:pointer;
+  border:1px solid var(--rule-strong); background:transparent; color:var(--gray-300);
+  display:inline-flex; align-items:center; justify-content:center;
+  transition:color .15s, border-color .15s, background .15s;
+}
+.theme-toggle:hover{ color:var(--white); border-color:var(--gray-500); background:rgba(128,128,128,.08); }
+.theme-toggle svg{ width:16px; height:16px; }
+.theme-toggle .ic-moon{ display:none; }
+:root[data-theme="light"] .theme-toggle .ic-sun{ display:none; }
+:root[data-theme="light"] .theme-toggle .ic-moon{ display:inline; }
+@media(max-width:780px){ .nav nav{ display:none; } }
+@media(max-width:1180px){ .nav .ghost{ display:none; } }
+
+/* hero */
+.hero{ padding:clamp(70px,12vw,150px) 0 clamp(50px,8vw,96px); }
+.hero .eyebrow{ margin-bottom:34px; }
+.hero-grid{ display:grid; grid-template-columns:1fr auto; gap:40px; align-items:start; margin-top:30px; padding-top:30px; border-top:1px solid var(--rule); }
+@media(max-width:860px){ .hero-grid{ grid-template-columns:1fr; gap:26px; } }
+.hero h1{ font-weight:600; font-size:clamp(40px,8.6vw,118px); line-height:.92; letter-spacing:-0.05em; max-width:11ch; }
+.hero h1 .cursor{ width:.22em; height:.7em; margin-right:.14em; transform:translateY(-.02em); vertical-align:baseline; }
+.hero h1 .dim{ color:var(--gray-500); }
+.hero-sub{ font-family:var(--mono); font-size:clamp(12px,1.4vw,15px); letter-spacing:.24em; text-transform:uppercase; color:var(--gray-450); max-width:24ch; line-height:1.7; }
+.hero .meta{ max-width:400px; }
+.hero .meta .kicker{ color:var(--gray-300); }
+.hero-actions{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; margin-top:26px; }
+
+/* buttons */
+.btn{
+  font-family:var(--sans); font-size:14px; font-weight:500; letter-spacing:-0.01em;
+  border-radius:999px; padding:11px 22px; cursor:pointer; border:1px solid transparent;
+  transition:transform .12s ease, background .15s, box-shadow .2s, border-color .15s, color .15s;
+  display:inline-flex; align-items:center; gap:9px; white-space:nowrap;
+}
+.btn:active{ transform:translateY(1px); }
+.btn-cta{ background:var(--orange); color:#160a00; }
+.btn-cta:hover{ background:var(--orange-bright); box-shadow:0 8px 30px -8px var(--orange-glow); }
+.btn-cta .cur{ width:7px; height:13px; background:#160a00; border-radius:1px; }
+.btn-ghost{ background:transparent; color:var(--white); border-color:var(--rule-strong); }
+.btn-ghost:hover{ border-color:var(--gray-400); background:rgba(128,128,128,.06); }
+.btn-mono{ font-family:var(--mono); font-size:12.5px; letter-spacing:.02em; background:transparent; color:var(--gray-300); border-color:var(--rule); border-radius:var(--r-sm); }
+.btn-mono:hover{ color:var(--white); border-color:var(--gray-500); }
+
+/* command field */
+.cmd{
+  display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:13.5px;
+  background:var(--ink-850); border:1px solid var(--rule); border-radius:999px;
+  padding:13px 18px; color:var(--gray-300);
+}
+.cmd .dollar{ color:var(--gray-500); flex:none; }
+.cmd .typed{ color:var(--white); }
+.cmd .copy{ margin-left:auto; color:var(--gray-500); background:none; border:0; cursor:pointer; font-family:var(--mono); font-size:12px; padding:2px 6px; border-radius:4px; transition:color .15s; }
+.cmd .copy:hover{ color:var(--white); }
+.cmd .copy.done{ color:var(--orange); }
+
+/* terminal window */
+.term-win{ border:1px solid var(--gray-700); border-radius:12px; overflow:hidden; background:var(--terminal);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 30px 70px -34px rgba(0,0,0,.9); }
+.term-bar{ display:flex; align-items:center; gap:8px; padding:13px 16px; border-bottom:1px solid var(--gray-700); }
+.term-bar .dot{ width:11px; height:11px; border-radius:50%; background:#3a3a3e; }
+.term-bar .title{ font-family:var(--mono); font-size:12px; color:var(--gray-400); margin:0 auto 0 14px; }
+.term-bar .chip{ font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; color:var(--orange); border:1px solid rgba(255,92,0,.4); border-radius:5px; padding:2px 9px; white-space:nowrap; }
+.term-body{ padding:22px 24px 26px; font-family:var(--mono); font-size:14px; line-height:1.95; overflow-x:auto; }
+.term-body .sp{ height:.9em; }
+.term-body .lb{ color:var(--gray-450); }
+.term-body .vl{ color:var(--white); }
+.term-body .fl{ color:var(--orange); }
+.term-body .kw{ color:var(--syn-key); }
+.term-body .fn{ color:var(--syn-fn); }
+.term-body .st{ color:var(--syn-str); }
+.term-body .pu{ color:var(--syn-pu); }
+.term-body .cm{ color:var(--syn-com); }
+.term-body .nu{ color:var(--syn-num); }
+.term-cur{ display:inline-block; width:8px; height:1.02em; background:var(--orange); border-radius:1px;
+  transform:translateY(.16em); box-shadow:0 0 10px var(--orange-glow); animation:blink 1.05s steps(1,end) infinite; }
+
+/* stage: terminal beside notes */
+.te-stage{ display:grid; grid-template-columns:1.35fr .65fr; gap:40px; align-items:center; }
+@media(max-width:880px){ .te-stage{ grid-template-columns:1fr; } }
+.te-notes h3{ font-size:22px; font-weight:600; letter-spacing:-0.02em; }
+.te-notes p{ color:var(--gray-300); font-size:14.5px; margin-top:12px; max-width:42ch; }
+.te-notes ul{ list-style:none; margin-top:22px; display:grid; gap:11px; }
+.te-notes li{ font-family:var(--mono); font-size:12.5px; color:var(--gray-400); display:flex; gap:11px; align-items:baseline; }
+.te-notes li b{ color:var(--orange); font-weight:500; min-width:74px; display:inline-block; flex:none; }
+
+/* bento (two jobs) */
+.bento{ display:grid; grid-template-columns:repeat(2,1fr); border:1px solid var(--rule); border-radius:var(--r-md); overflow:hidden; }
+@media(max-width:760px){ .bento{ grid-template-columns:1fr; } }
+.bento .cell{ padding:30px 30px 34px; border-right:1px solid var(--rule); background:var(--ink-900); }
+.bento .cell:last-child{ border-right:0; }
+@media(max-width:760px){ .bento .cell{ border-right:0; border-bottom:1px solid var(--rule); } .bento .cell:last-child{ border-bottom:0; } }
+.bento .cap{ font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--gray-450); margin-bottom:18px; }
+.bento .cap .o{ color:var(--orange); }
+.bento h3{ font-size:21px; font-weight:600; letter-spacing:-0.02em; }
+.bento p{ color:var(--gray-300); font-size:15px; line-height:1.5; margin-top:9px; max-width:44ch; }
+.bento .cmdline{ font-family:var(--mono); font-size:13px; color:var(--white); margin-top:20px; }
+.bento .cmdline .dollar{ color:var(--gray-500); }
+.bento .cmdline .arg{ color:var(--gray-400); }
+
+/* spec sheet (what's on a board) */
+.spec-sheet{ display:grid; grid-template-columns:1fr 1.05fr 1.05fr 1.05fr; gap:38px; }
+@media(max-width:980px){ .spec-sheet{ grid-template-columns:1fr 1fr; gap:30px; } }
+@media(max-width:560px){ .spec-sheet{ grid-template-columns:1fr; } }
+.spec-title{ font-size:clamp(22px,2.6vw,30px); font-weight:600; letter-spacing:-0.03em; line-height:1.04; }
+.spec-note{ color:var(--gray-400); font-size:14.5px; margin-top:16px; max-width:30ch; }
+.spec-col{ display:grid; gap:24px; align-content:start; }
+.spec-g .k{ font-size:16px; font-weight:600; letter-spacing:-0.01em; }
+.spec-g .k .n{ font-family:var(--mono); font-size:11px; color:var(--orange); margin-right:10px; letter-spacing:.04em; }
+.spec-g .v{ color:var(--gray-400); font-size:14.5px; line-height:1.45; margin-top:4px; }
+.spec-g .v code{ font-family:var(--mono); font-size:.9em; color:var(--gray-200); }
+
+/* the rules */
+.rules{ border:1px solid var(--rule); border-radius:var(--r-md); overflow:hidden; }
+.rule-row{ display:grid; grid-template-columns:64px 1fr; gap:22px; align-items:baseline; padding:22px 26px; border-top:1px solid var(--rule); background:var(--ink-900); }
+.rule-row:first-child{ border-top:0; }
+.rule-row .n{ font-family:var(--mono); font-size:12px; color:var(--orange); letter-spacing:.04em; }
+.rule-row .t{ font-size:clamp(16px,1.6vw,19px); font-weight:500; letter-spacing:-0.015em; color:var(--white); }
+.rule-row .t span{ color:var(--gray-400); font-weight:400; }
+@media(max-width:560px){ .rule-row{ grid-template-columns:1fr; gap:6px; padding:18px 20px; } }
+
+/* layers */
+.layers{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+@media(max-width:820px){ .layers{ grid-template-columns:1fr; } }
+.layer{ border:1px solid var(--rule); border-radius:var(--r-md); background:var(--ink-900); padding:24px; }
+.layer h4{ font-family:var(--mono); font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:var(--gray-450); margin-bottom:14px; display:flex; gap:10px; }
+.layer h4 .o{ color:var(--orange); }
+.layer .where{ font-family:var(--mono); font-size:12.5px; color:var(--white); }
+.layer p{ color:var(--gray-400); font-size:13.5px; margin-top:10px; line-height:1.5; }
+.layer .build{ font-family:var(--mono); font-size:12px; color:var(--gray-300); margin-top:16px; padding-top:14px; border-top:1px solid var(--rule-faint); }
+.layer .build .dollar{ color:var(--gray-500); }
+
+/* install */
+.install{ display:grid; grid-template-columns:.9fr 1.1fr; gap:40px; align-items:start; }
+@media(max-width:860px){ .install{ grid-template-columns:1fr; } }
+.install .cmd + .cmd{ margin-top:12px; }
+.install .fine{ font-family:var(--mono); font-size:12px; color:var(--gray-450); line-height:1.8; margin-top:20px; }
+.install .fine b{ color:var(--gray-300); font-weight:500; }
+
+/* footer */
+footer{ border-top:1px solid var(--rule); padding:60px 0 80px; }
+.foot-grid{ display:grid; grid-template-columns:1.4fr repeat(3,1fr); gap:36px; }
+@media(max-width:760px){ .foot-grid{ grid-template-columns:1fr 1fr; gap:30px; } }
+.foot-grid h5{ font-family:var(--mono); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--gray-450); margin-bottom:16px; }
+.foot-grid a{ display:block; font-size:13.5px; color:var(--gray-400); padding:5px 0; transition:color .15s; }
+.foot-grid a:hover{ color:var(--white); }
+.foot-brand .brand{ font-size:21px; }
+.foot-brand p{ color:var(--gray-500); font-size:13px; margin-top:16px; max-width:30ch; font-family:var(--mono); line-height:1.7; }
+
+@media(max-width:640px){
+  .section-pad{ padding:clamp(44px,11vw,72px) 0; }
+  .nav{ gap:16px; }
+  .term-body{ font-size:12.5px; padding:18px 16px; }
+  .bento .cell{ padding:24px 22px 28px; }
+  .layer{ padding:20px; }
+}
+</style>
+<script>
+  (function(){
+    try{
+      if(window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches){
+        document.documentElement.setAttribute('data-theme','light');
+      }
+    }catch(e){}
+  })();
+</script>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#top"><span class="mark"><i></i></span> Grasp</a>
+    <nav aria-label="Sections">
+      <a href="#jobs">Two jobs</a>
+      <a href="#board">The board</a>
+      <a href="#rules">Rules</a>
+      <a href="#layers">Layers</a>
+      <a href="#install">Install</a>
+    </nav>
+    <span class="spacer"></span>
+    <a class="ghost" href="https://github.com/silverback-ventures/grasp">github.com/silverback-ventures/grasp ↗</a>
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle light / dark theme" title="Toggle theme">
+      <svg class="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2.5M12 19.5V22M4.2 4.2l1.8 1.8M18 18l1.8 1.8M2 12h2.5M19.5 12H22M4.2 19.8 6 18M18 6l1.8-1.8"/></svg>
+      <svg class="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8 8 0 0 1 9.5 4 6.5 6.5 0 1 0 20 14.5z"/></svg>
+    </button>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- HERO -->
+  <section class="section hero">
+    <div class="wrap">
+      <div class="eyebrow"><span class="idx">▌</span> GRASP / A CODE REVIEW TOOL FOR THE AGENT ERA</div>
+      <h1><span class="cursor"></span>Don't outsource your understanding.</h1>
+      <div class="hero-grid">
+        <div class="hero-sub">A LOCAL BOARD FOR THE CHANGE IN FRONT OF YOU</div>
+        <div class="meta">
+          <p class="kicker">
+            Claude writes most of the code now, and nobody understands what happened.
+            Grasp puts a change on a board you can actually read. Nothing is posted,
+            pushed or merged until you click for it.
+          </p>
+          <div class="hero-actions">
+            <a class="btn btn-cta" href="#install"><span class="cur"></span> Install the plugin</a>
+            <a class="btn btn-ghost" href="https://github.com/silverback-ventures/grasp">Read the source ↗</a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE BOARD, AS A TERMINAL -->
+  <section class="section section-pad" id="jobs">
+    <div class="wrap">
+      <div class="eyebrow"><span class="idx">01</span> WHAT IT IS <span class="line"></span></div>
+      <div class="row-between" style="margin-bottom:44px">
+        <h2 class="h2" style="max-width:18ch">A Claude Code plugin with two&nbsp;jobs.</h2>
+        <p class="lead">One board, whether the change is yours or someone else's: what it does, a diagram, where it can break, what it reuses, screenshots when it touches a screen, and findings you accept or drop one by one. <b>The diff is on it, but it is the least prominent thing there.</b></p>
+      </div>
+
+      <div class="bento">
+        <div class="cell">
+          <div class="cap"><span class="o">▌</span> JOB 01</div>
+          <h3>Understand your own change while you build it.</h3>
+          <p>Takes a ticket or a sentence, writes the change, runs the real tests, and puts the result on the board. A draft pull request opens only when you click for one.</p>
+          <div class="cmdline"><span class="dollar">&gt;</span> /grasp:ship <span class="arg">SOME-123</span></div>
+        </div>
+        <div class="cell">
+          <div class="cap"><span class="o">▌</span> JOB 02</div>
+          <h3>Understand someone else's before you approve it.</h3>
+          <p>The same board for a pull request. Your review reaches GitHub comment by comment, each one approved by you.</p>
+          <div class="cmdline"><span class="dollar">&gt;</span> /grasp:review <span class="arg">1234</span></div>
+        </div>
+      </div>
+
+      <div class="te-stage mt-lg">
+        <div class="term-win">
+          <div class="term-bar">
+            <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+            <span class="title">grasp — board</span>
+            <span class="chip">● nothing leaves without a click</span>
+          </div>
+          <div class="term-body">
+            <div><span class="cm">claude ~ %</span> <span class="kw">/grasp</span></div>
+            <div class="sp"></div>
+            <div><span class="cm">→ board open on</span> <span class="st">http://127.0.0.1:4173</span></div>
+            <div><span class="cm">→ 3 changes waiting, smallest first</span></div>
+            <div class="sp"></div>
+            <div><span class="lb">#1</span>  <span class="vl">Add rate limiting to /api</span>          <span class="nu">4 files</span></div>
+            <div><span class="lb">#2</span>  <span class="vl">Move home to ~/.grasp</span>              <span class="nu">11 files</span></div>
+            <div><span class="lb">#3</span>  <span class="vl">Review steps as plugins</span>            <span class="nu">27 files</span></div>
+            <div class="sp"></div>
+            <div><span class="cm">→ picked #1</span></div>
+            <div><span class="lb">understanding</span>  <span class="vl">landed</span>   <span class="cm">what it does · diagram · a note per file</span></div>
+            <div><span class="lb">hazards</span>        <span class="vl">landed</span>   <span class="fl">▲ also removes two guards in auth/session.ts</span></div>
+            <div><span class="lb">findings</span>       <span class="vl">1</span>        <span class="cm">with evidence, </span><span class="st">auth/session.ts</span><span class="pu">:</span><span class="nu">41-58</span></div>
+            <div class="sp"></div>
+            <div><span class="cm">claude ~ %</span> <span class="term-cur"></span></div>
+          </div>
+        </div>
+
+        <div class="te-notes">
+          <h3>The board is the product.</h3>
+          <p>Open it once. It lists the changes waiting on your review, smallest first. Click one and the session picks it up; each section lands on the board as it is written. You will not need the terminal again.</p>
+          <ul>
+            <li><b>Board</b> binds to loopback, your files stay on your disk</li>
+            <li><b>Session</b> reads, greps and runs commands, never writes to your repo</li>
+            <li><b>You</b> accept or drop each finding, then click to post</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- WHAT IS ON A BOARD -->
+  <section class="section section-pad" id="board">
+    <div class="wrap">
+      <div class="eyebrow"><span class="idx">02</span> WHAT IS ON A BOARD <span class="line"></span></div>
+      <div class="spec-sheet">
+        <div>
+          <div class="spec-title">Written from the diff, before any reviewer&nbsp;returns.</div>
+          <p class="spec-note">A finding carries its evidence or it is dropped. Findings are ranked and collapsed, never hidden, and every demotion says why. Zero findings on a clean change is the correct answer.</p>
+        </div>
+        <div class="spec-col">
+          <div class="spec-g"><div class="k"><span class="n">01</span>What it does</div><div class="v">The change in plain words, from the diff, not the description.</div></div>
+          <div class="spec-g"><div class="k"><span class="n">02</span>A diagram</div><div class="v">The code it touches, drawn. Select a few lines and ask to be shown them.</div></div>
+          <div class="spec-g"><div class="k"><span class="n">03</span>A note per file</div><div class="v">Why each file is in the change, and which ones are not what the change claims.</div></div>
+        </div>
+        <div class="spec-col">
+          <div class="spec-g"><div class="k"><span class="n">04</span>Where it can break</div><div class="v">Hazards that pass tests and fail in production, named for this repository.</div></div>
+          <div class="spec-g"><div class="k"><span class="n">05</span>What already existed</div><div class="v">Code the change reuses, and code it reinvents.</div></div>
+          <div class="spec-g"><div class="k"><span class="n">06</span>The tests that ran</div><div class="v">The real ones, and their result.</div></div>
+        </div>
+        <div class="spec-col">
+          <div class="spec-g"><div class="k"><span class="n">07</span>Screens</div><div class="v">Stills, a before/after pair against the base branch, or a video of a flow, whenever a change touches rendered UI.</div></div>
+          <div class="spec-g"><div class="k"><span class="n">08</span>Findings</div><div class="v">Each with a cited <code>file:line</code>, a smaller diff, a named execution path, or a rendered image.</div></div>
+          <div class="spec-g"><div class="k"><span class="n">09</span>Your notes</div><div class="v">Ask about a few lines or write a note. Both persist with the board, and answers arrive without you watching.</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- THE RULES -->
+  <section class="section section-pad" id="rules">
+    <div class="wrap">
+      <div class="eyebrow"><span class="idx">03</span> THE RULES IT HOLDS ITSELF TO <span class="line"></span></div>
+      <div class="row-between" style="margin-bottom:34px">
+        <h2 class="h2" style="max-width:16ch">Nothing leaves the machine without a human&nbsp;click.</h2>
+        <p class="lead">Verify it on your first run. Draft a review, and watch that nothing reaches GitHub until you press the button on the board.</p>
+      </div>
+      <div class="rules">
+        <div class="rule-row"><div class="n">RULE 01</div><div class="t">No auto-posted comments, no auto-pushed commits, ever. <span>Every comment and every push is one click, by you.</span></div></div>
+        <div class="rule-row"><div class="n">RULE 02</div><div class="t">A review never writes to your repository. <span>It reads, greps and runs commands.</span></div></div>
+        <div class="rule-row"><div class="n">RULE 03</div><div class="t">The board binds to loopback and your files stay on your disk. <span>Diagrams render offline. No request but the web font leaves the board.</span></div></div>
+        <div class="rule-row"><div class="n">RULE 04</div><div class="t">It does not manufacture a case for rejection to look useful. <span>Zero findings on a clean change is the correct answer.</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- LAYERS -->
+  <section class="section section-pad" id="layers">
+    <div class="wrap">
+      <div class="eyebrow"><span class="idx">04</span> MAKE IT SHARPER <span class="line"></span></div>
+      <div class="row-between" style="margin-bottom:34px">
+        <h2 class="h2" style="max-width:18ch">Works with no configuration. Gets sharper with&nbsp;three&nbsp;layers.</h2>
+        <p class="lead">Three lenses, <b>correctness</b>, <b>subtraction</b> and <b>operability</b>, run on every change in every repository. Everything else is optional, lives exactly once, at the layer where it is true. Later layers override earlier ones.</p>
+      </div>
+      <div class="layers">
+        <div class="layer">
+          <h4><span class="o">▌</span> PLUGIN</h4>
+          <div class="where">silverback-ventures/grasp</div>
+          <p>The board, the lenses, the evidence rubric, the commands. Review steps are plugins too: read the summary aloud, quiz you on the change, draw the code it touches.</p>
+          <div class="build"><span class="dollar">→</span> contribute upstream</div>
+        </div>
+        <div class="layer">
+          <h4><span class="o">▌</span> PROJECT</h4>
+          <div class="where">&lt;repo&gt;/.grasp/ · checked in</div>
+          <p>How the lenses adjust here, hazards that pass tests and fail in production, how to run the tests, how this repo renders, extra review steps.</p>
+          <div class="build"><span class="dollar">&gt;</span> /grasp:setup <span style="color:var(--gray-500)">· under two minutes, from the repo's own history</span></div>
+        </div>
+        <div class="layer">
+          <h4><span class="o">▌</span> ME</h4>
+          <div class="where">~/.grasp/me/ · never shared</div>
+          <p>Your language and tone, your hard rules, your board labels, your own review steps.</p>
+          <div class="build"><span class="dollar">&gt;</span> /grasp:me <span style="color:var(--gray-500)">· from your own GitHub activity</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section class="section section-pad" id="install">
+    <div class="wrap">
+      <div class="eyebrow"><span class="idx">05</span> INSTALL <span class="line"></span></div>
+      <div class="install">
+        <div>
+          <h2 class="h2">That is the whole&nbsp;install.</h2>
+          <p class="lead mt-sm">The board ships built, so there is no <code style="font-family:var(--mono);font-size:.92em;color:var(--white)">npm install</code> and no build step. Then, in any repository, open the board and work from it.</p>
+          <div class="hero-actions">
+            <a class="btn btn-mono" href="https://github.com/silverback-ventures/grasp#readme">README ↗</a>
+            <a class="btn btn-mono" href="https://github.com/silverback-ventures/grasp/blob/main/docs/board.md">docs/board.md ↗</a>
+            <a class="btn btn-mono" href="https://github.com/silverback-ventures/grasp/blob/main/docs/plugins.md">docs/plugins.md ↗</a>
+          </div>
+        </div>
+        <div>
+          <div class="cmd"><span class="dollar">&gt;</span><span><span class="typed">/plugin marketplace add</span> silverback-ventures/grasp</span><button class="copy" data-copy="/plugin marketplace add silverback-ventures/grasp" aria-label="Copy command">⧉</button></div>
+          <div class="cmd"><span class="dollar">&gt;</span><span><span class="typed">/plugin install</span> grasp</span><button class="copy" data-copy="/plugin install grasp" aria-label="Copy command">⧉</button></div>
+          <div class="cmd"><span class="dollar">&gt;</span><span><span class="typed">/grasp</span></span><span class="cursor" style="width:.5em;height:.95em;margin-left:2px"></span></div>
+          <p class="fine">Needs <b>Claude Code</b>, <b>git</b> and <b>node</b>. <b>gh</b> for the parts that talk to GitHub, <b>jq</b> for the deterministic checks. MIT.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <a class="brand" href="#top"><span class="mark"><i></i></span> Grasp</a>
+      <p>Don't outsource your understanding.<br><br>Understanding code changes,<br>not approving them.</p>
+    </div>
+    <div>
+      <h5>Product</h5>
+      <a href="#jobs">Two jobs</a>
+      <a href="#board">What is on a board</a>
+      <a href="#rules">The rules</a>
+      <a href="#layers">Layers</a>
+    </div>
+    <div>
+      <h5>Docs</h5>
+      <a href="https://github.com/silverback-ventures/grasp/blob/main/docs/board.md">The board</a>
+      <a href="https://github.com/silverback-ventures/grasp/blob/main/docs/project-layer.md">Project layer</a>
+      <a href="https://github.com/silverback-ventures/grasp/blob/main/docs/layers.md">Layers</a>
+      <a href="https://github.com/silverback-ventures/grasp/blob/main/docs/plugins.md">Review steps as plugins</a>
+      <a href="https://github.com/silverback-ventures/grasp/blob/main/ROADMAP.md">Roadmap</a>
+    </div>
+    <div>
+      <h5>Source</h5>
+      <a href="https://github.com/silverback-ventures/grasp">GitHub ↗</a>
+      <a href="https://github.com/silverback-ventures/grasp/blob/main/LICENSE">MIT license</a>
+      <a href="https://github.com/silverback-ventures">Silverback Ventures</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  (function(){
+    var root = document.documentElement;
+    var btn = document.getElementById('themeToggle');
+    if(btn) btn.addEventListener('click', function(){
+      var isLight = root.getAttribute('data-theme') === 'light';
+      if(isLight) root.removeAttribute('data-theme');
+      else root.setAttribute('data-theme','light');
+    });
+    document.querySelectorAll('.copy[data-copy]').forEach(function(b){
+      b.addEventListener('click', function(){
+        var text = b.getAttribute('data-copy');
+        function done(){ b.textContent='✓'; b.classList.add('done'); setTimeout(function(){ b.textContent='⧉'; b.classList.remove('done'); }, 1400); }
+        if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(done, done); }
+        else { done(); }
+      });
+    });
+  })();
+</script>
+</body>
+</html>
