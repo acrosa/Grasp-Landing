@@ -129,9 +129,16 @@ header{
   gap:clamp(24px,4vw,56px); align-items:end;
 }
 @media(max-width:900px){ .cta{ grid-template-columns:1fr; align-items:start; } }
-.kicker{
-  font-family:var(--mono); font-size:12.5px; line-height:1.75; letter-spacing:.04em;
-  text-transform:uppercase; color:var(--muted); max-width:62ch;
+.pitch{ max-width:52ch; }
+.tagline{
+  font-size:clamp(18px,1.7vw,23px); font-weight:500; letter-spacing:-0.02em; line-height:1.3;
+  color:var(--fg);
+}
+.tagline .l{ display:block; text-wrap:balance; }
+@media(max-width:480px){ .tagline{ font-size:17px; } }
+.sub{
+  font-family:var(--mono); font-size:12.5px; line-height:1.7; letter-spacing:.01em;
+  color:var(--muted); margin-top:14px; max-width:52ch;
 }
 .actions{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
 
@@ -169,11 +176,10 @@ header{
     <h1><span class="l">Don’t outsource</span> <span class="l">your understanding.</span></h1>
 
     <div class="cta">
-      <p class="kicker">
-        Claude writes most of the code now, and nobody understands what happened.
-        Grasp puts a change on a board you can actually read. Nothing is posted,
-        pushed or merged until you click for it.
-      </p>
+      <div class="pitch">
+        <p class="tagline"><span class="l">Claude writes the code.</span> <span class="l">Grasp makes sure you still understand it.</span></p>
+        <p class="sub">A Claude Code plugin. Every change on a board you can read, yours or a teammate’s. Nothing leaves the machine until you click.</p>
+      </div>
       <div class="actions">
         <a class="btn btn-cta" href="https://github.com/silverback-ventures/grasp#install"><span class="cur"></span> Install the plugin</a>
         <a class="btn btn-ghost" href="https://github.com/silverback-ventures/grasp">Read the source ↗</a>
